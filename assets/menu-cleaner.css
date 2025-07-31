@@ -1,0 +1,146 @@
+/* Menu Cleaner Styles */
+
+#menu-cleaner-progress {
+    margin-top: 30px;
+    padding: 20px;
+    background: #f1f1f1;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+.progress-wrapper {
+    margin: 20px 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 30px;
+    background: #ddd;
+    border-radius: 15px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #0073aa;
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 15px;
+    position: relative;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        45deg,
+        rgba(255,255,255,.2) 25%,
+        transparent 25%,
+        transparent 50%,
+        rgba(255,255,255,.2) 50%,
+        rgba(255,255,255,.2) 75%,
+        transparent 75%,
+        transparent
+    );
+    background-size: 30px 30px;
+    animation: progress-animation 1s linear infinite;
+}
+
+@keyframes progress-animation {
+    0% {
+        background-position: 0 0;
+    }
+    100% {
+        background-position: 30px 30px;
+    }
+}
+
+.progress-text {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.deletion-log {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    background: #fff;
+    padding: 10px;
+    margin-top: 20px;
+    border-radius: 4px;
+}
+
+.log-entry {
+    padding: 5px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-entry .dashicons {
+    color: #46b450;
+    font-size: 16px;
+    vertical-align: middle;
+}
+
+#menu-cleaner-notices {
+    margin-top: 20px;
+}
+
+#menu-cleaner-notices .notice {
+    margin: 0 0 20px 0;
+}
+
+#menu-cleaner-notices .dashicons {
+    font-size: 20px;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+#menu-cleaner-notices .notice-success .dashicons {
+    color: #46b450;
+}
+
+#menu-cleaner-notices .notice-error .dashicons {
+    color: #dc3232;
+}
+
+#menu-cleaner-notices .notice-warning .dashicons {
+    color: #ffb900;
+}
+
+#menu-cleaner-notices .notice-info .dashicons {
+    color: #00a0d2;
+}
+
+.spinner {
+    float: none;
+    margin: 0 0 0 10px;
+    vertical-align: middle;
+}
+
+#menu-cleaner-form select#menu_id {
+    max-width: 400px;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 782px) {
+    .progress-bar {
+        height: 25px;
+    }
+    
+    .deletion-log {
+        max-height: 200px;
+    }
+}

@@ -1,19 +1,21 @@
 # Menu Cleaner
 
-A WordPress plugin by Victor Adams that helps you clean up your navigation menus by deleting menu items based on their visual position (menu_order). Users can select how many items to delete (1-500).
+A WordPress plugin by Victor Adams that helps you clean up your navigation menus by deleting menu items based on their visual position (menu_order). Features menu selection, customizable deletion count, and real-time progress tracking with AJAX.
 
 ## Description
 
-Menu Cleaner is a utility plugin designed to help WordPress administrators manage large navigation menus. It specifically targets the Primary Menu and removes items based on their menu order, allowing users to specify exactly how many items to delete (1-500), making it ideal for cleaning up test data or managing oversized menus.
+Menu Cleaner is a utility plugin designed to help WordPress administrators manage large navigation menus. It allows you to select any menu in your WordPress site and remove items based on their menu order. With real-time progress tracking, you can watch as items are deleted in batches, making it ideal for cleaning up test data or managing oversized menus.
 
 ## Features
 
-- **Customizable Deletion**: Choose how many items to delete (1-500)
-- **Targeted Deletion**: Only affects the Primary Menu, leaving other menus untouched
+- **Menu Selection**: Choose any menu from your WordPress site to clean
+- **Customizable Deletion**: Specify how many items to delete (1-500)
+- **Real-time Progress Bar**: Visual progress indicator with percentage completion
+- **AJAX-powered**: Batch processing prevents timeouts on large operations
+- **Deletion Log**: Live feed showing each deleted item with ID and title
+- **Item Count Display**: Shows current item count for each menu
 - **Safe Operation**: Requires administrator permissions (`manage_options` capability)
-- **Visual Feedback**: Shows the number of deleted items and their IDs
-- **Manual Control**: Operates through a dedicated admin page with confirmation dialog
-- **Smart Detection**: Automatically finds the Primary Menu using various naming conventions
+- **Confirmation Dialog**: Prevents accidental deletions
 - **Complete Removal**: Uses `wp_delete_post()` with hard delete for thorough cleanup
 
 ## Requirements
@@ -32,25 +34,30 @@ Menu Cleaner is a utility plugin designed to help WordPress administrators manag
 ## Usage
 
 1. After activation, go to **Tools → Clean Menu Items** in your WordPress admin
-2. The page will show a warning about the permanent nature of the deletion
+2. Select a menu from the dropdown (shows item count for each menu)
 3. Enter the number of items you want to delete (1-500)
 4. Click the "Delete Menu Items" button
 5. Confirm the action in the popup dialog
-6. The plugin will delete the specified number of menu items and display the results
+6. Watch the real-time progress bar as items are deleted
+7. Review the deletion log showing each removed item
+8. The menu dropdown automatically updates with the new item count
 
 ### What Gets Deleted
 
 - The plugin identifies menu items by `post_type = 'nav_menu_item'`
 - Items are sorted by `menu_order` in descending order (highest/last items first)
-- Only items associated with the Primary Menu are affected
+- Only items from the selected menu are affected
 - You can delete between 1 and 500 items per operation
+- Items are deleted in batches of 10 to prevent timeouts
+- Each deleted item is logged with its ID, title, and menu order
 
-### Primary Menu Detection
+### Menu Selection
 
-The plugin looks for the Primary Menu in this order:
-1. Checks the theme's registered 'primary' menu location
-2. Searches for menus named: 'Primary Menu', 'Main Menu', 'Primary', or 'Main'
-3. Returns safely if no Primary Menu is found
+The plugin provides:
+1. A dropdown list of all available menus in your WordPress site
+2. Live item count for each menu
+3. Automatic count updates after deletion
+4. Support for any menu regardless of location or name
 
 ## Safety Features
 
@@ -62,25 +69,39 @@ The plugin looks for the Primary Menu in this order:
 
 ## Technical Details
 
+### AJAX Implementation
+- Batch processing: Deletes items in groups of 10
+- Prevents timeouts on large deletion operations
+- Real-time progress updates without page refresh
+- Graceful error handling with user-friendly messages
+
 ### Database Operations
 - Uses WordPress `$wpdb` for efficient querying
 - Joins `wp_posts` with `wp_term_relationships` tables
 - Properly clears WordPress menu cache after deletion
 
-### Hooks Used
+### Hooks and Actions
 - `admin_menu`: Registers the admin submenu page
+- `admin_enqueue_scripts`: Loads JavaScript and CSS assets
+- `wp_ajax_menu_cleaner_delete_items`: AJAX handler for deletion
+- `wp_ajax_menu_cleaner_get_count`: AJAX handler for menu counts
 - `wp_delete_post()`: Core function for safe post deletion
 
 ## Troubleshooting
 
 **No items deleted?**
-- Check if your theme has a Primary Menu defined
-- Verify that the menu contains nav_menu_item posts
+- Verify the selected menu contains items
+- Check that items haven't already been deleted
 - Ensure you have administrator privileges
 
-**Wrong menu affected?**
-- The plugin only targets the Primary Menu
-- Check your theme's menu locations in Appearance → Menus
+**Progress bar stuck?**
+- Check browser console for JavaScript errors
+- Verify AJAX requests aren't being blocked
+- Try refreshing the page and attempting again
+
+**Timeout errors?**
+- The plugin uses batch processing to prevent timeouts
+- If issues persist, try deleting fewer items at once
 
 **Need to delete more than 500 items?**
 - Run the tool multiple times
@@ -111,7 +132,16 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
-### 1.1.0 - by Victor Adams
+### 1.2.0 - by Victor Adams
+- Added menu selection dropdown with item counts
+- Implemented AJAX-based deletion with real-time progress bar
+- Added deletion log showing each removed item
+- Batch processing to prevent timeouts
+- Live menu count updates after deletion
+- Enhanced UI with CSS animations
+- Improved error handling and user feedback
+
+### 1.1.0
 - Added user-selectable number of items to delete (1-500)
 - Updated UI with number input field
 - Dynamic confirmation message showing selected count
