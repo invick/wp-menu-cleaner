@@ -98,12 +98,9 @@ function menu_cleaner_admin_page() {
                                 <option value="<?php echo esc_attr($menu->term_id); ?>">
                                     <?php echo esc_html($menu->name); ?> 
                                     (<?php 
-                                        $count = wp_count_terms('nav_menu', array(
-                                            'hide_empty' => false,
-                                            'parent' => 0,
-                                            'object_ids' => wp_get_nav_menu_items($menu->term_id, array('fields' => 'ids'))
-                                        ));
-                                        printf(_n('%d item', '%d items', count(wp_get_nav_menu_items($menu->term_id)), 'menu-cleaner'), count(wp_get_nav_menu_items($menu->term_id)));
+                                        $items = wp_get_nav_menu_items($menu->term_id);
+                                        $count = is_array($items) ? count($items) : 0;
+                                        printf(_n('%d item', '%d items', $count, 'menu-cleaner'), $count);
                                     ?>)
                                 </option>
                             <?php endforeach; ?>
