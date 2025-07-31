@@ -91,7 +91,7 @@ function menu_cleaner_admin_page() {
                 </tr>
             </table>
             <p>
-                <input type="submit" name="clean_menu_items" class="button button-primary" value="<?php esc_attr_e('Delete Menu Items', 'menu-cleaner'); ?>" onclick="return confirm('<?php esc_attr_e('Are you sure you want to delete ' + document.getElementById('num_items').value + ' menu items? This action cannot be undone.', 'menu-cleaner'); ?>');" />
+                <input type="submit" name="clean_menu_items" class="button button-primary" value="<?php esc_attr_e('Delete Menu Items', 'menu-cleaner'); ?>" onclick="return confirm('Are you sure you want to delete ' + document.getElementById('num_items').value + ' menu items? This action cannot be undone.');" />
             </p>
         </form>
     </div>
