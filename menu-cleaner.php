@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.2.1
+ * Version: 1.3.0
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.2.1');
+define('MENU_CLEANER_VERSION', '1.3.0');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -136,6 +136,18 @@ function menu_cleaner_admin_page() {
                         <p class="description"><?php _e('Enter the number of menu items to delete (1-500).', 'menu-cleaner'); ?></p>
                     </td>
                 </tr>
+                <tr>
+                    <th scope="row">
+                        <label for="skip_parents"><?php _e('Skip Parent Items', 'menu-cleaner'); ?></label>
+                    </th>
+                    <td>
+                        <label>
+                            <input type="checkbox" id="skip_parents" name="skip_parents" value="1" checked="checked" />
+                            <?php _e('Skip menu items that have sub-items (and skip their sub-items too)', 'menu-cleaner'); ?>
+                        </label>
+                        <p class="description"><?php _e('When enabled, parent items and all their children will be preserved.', 'menu-cleaner'); ?></p>
+                    </td>
+                </tr>
             </table>
             
             <div id="menu-cleaner-progress" style="display: none;">
@@ -180,6 +192,7 @@ function menu_cleaner_ajax_delete_items() {
     $menu_id = isset($_POST['menu_id']) ? intval($_POST['menu_id']) : 0;
     $batch_size = isset($_POST['batch_size']) ? intval($_POST['batch_size']) : 10;
     $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    $skip_parents = isset($_POST['skip_parents']) && $_POST['skip_parents'] === 'true';
     
     if (!$menu_id) {
         wp_send_json_error(array('message' => __('Invalid menu ID', 'menu-cleaner')));
@@ -187,16 +200,56 @@ function menu_cleaner_ajax_delete_items() {
     
     global $wpdb;
     
-    // Get menu items to delete (batch processing)
-    $query = $wpdb->prepare("
-        SELECT p.ID, p.post_title, p.menu_order
-        FROM {$wpdb->posts} p
-        INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
-        WHERE p.post_type = 'nav_menu_item'
-        AND tr.term_taxonomy_id = %d
-        ORDER BY p.menu_order DESC
-        LIMIT %d OFFSET %d
-    ", $menu_id, $batch_size, $offset);
+    // Build query based on skip_parents option
+    if ($skip_parents) {
+        // Get all parent IDs first
+        $parent_ids = $wpdb->get_col($wpdb->prepare("
+            SELECT DISTINCT pm.meta_value 
+            FROM {$wpdb->postmeta} pm
+            INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID
+            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+            WHERE pm.meta_key = '_menu_item_menu_item_parent'
+            AND pm.meta_value != '0'
+            AND p.post_type = 'nav_menu_item'
+            AND tr.term_taxonomy_id = %d
+        ", $menu_id));
+        
+        // Get menu items to delete, excluding parents and their children
+        $exclude_sql = '';
+        if (!empty($parent_ids)) {
+            $exclude_sql = "AND p.ID NOT IN (" . implode(',', array_map('intval', $parent_ids)) . ")
+                            AND (pm.meta_value IS NULL OR pm.meta_value = '0' OR pm.meta_value NOT IN (" . implode(',', array_map('intval', $parent_ids)) . "))";
+        }
+        
+        $query = $wpdb->prepare("
+            SELECT p.ID, p.post_title, p.menu_order
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_menu_item_menu_item_parent'
+            WHERE p.post_type = 'nav_menu_item'
+            AND tr.term_taxonomy_id = %d
+            AND NOT EXISTS (
+                SELECT 1 FROM {$wpdb->postmeta} pm2
+                WHERE pm2.meta_key = '_menu_item_menu_item_parent'
+                AND pm2.meta_value = CAST(p.ID AS CHAR)
+                AND pm2.meta_value != '0'
+            )
+            $exclude_sql
+            ORDER BY p.menu_order DESC
+            LIMIT %d OFFSET %d
+        ", $menu_id, $batch_size, $offset);
+    } else {
+        // Original query - delete all items regardless of parent/child relationship
+        $query = $wpdb->prepare("
+            SELECT p.ID, p.post_title, p.menu_order
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+            WHERE p.post_type = 'nav_menu_item'
+            AND tr.term_taxonomy_id = %d
+            ORDER BY p.menu_order DESC
+            LIMIT %d OFFSET %d
+        ", $menu_id, $batch_size, $offset);
+    }
     
     $menu_items = $wpdb->get_results($query);
     $deleted_items = array();

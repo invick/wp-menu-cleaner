@@ -10,6 +10,7 @@ Menu Cleaner is a utility plugin designed to help WordPress administrators manag
 
 - **Menu Selection**: Choose any menu from your WordPress site to clean
 - **Customizable Deletion**: Specify how many items to delete (1-500)
+- **Skip Parent Items**: Option to preserve menu items that have sub-items (and their children)
 - **Real-time Progress Bar**: Visual progress indicator with percentage completion
 - **AJAX-powered**: Batch processing prevents timeouts on large operations
 - **Deletion Log**: Live feed showing each deleted item with ID and title
@@ -36,11 +37,14 @@ Menu Cleaner is a utility plugin designed to help WordPress administrators manag
 1. After activation, go to **Tools → Clean Menu Items** in your WordPress admin
 2. Select a menu from the dropdown (shows item count for each menu)
 3. Enter the number of items you want to delete (1-500)
-4. Click the "Delete Menu Items" button
-5. Confirm the action in the popup dialog
-6. Watch the real-time progress bar as items are deleted
-7. Review the deletion log showing each removed item
-8. The menu dropdown automatically updates with the new item count
+4. Choose whether to skip parent items (enabled by default):
+   - When **checked**: Parent items and all their sub-items will be preserved
+   - When **unchecked**: All items will be deleted regardless of hierarchy
+5. Click the "Delete Menu Items" button
+6. Confirm the action in the popup dialog
+7. Watch the real-time progress bar as items are deleted
+8. Review the deletion log showing each removed item
+9. The menu dropdown automatically updates with the new item count
 
 ### What Gets Deleted
 
@@ -132,7 +136,14 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
-### 1.2.1 - by Victor Adams
+### 1.3.0 - by Victor Adams
+- Added "Skip Parent Items" option to preserve hierarchical menu structures
+- Parent items with sub-items can now be protected from deletion
+- Sub-items of protected parent items are also preserved
+- Option is enabled by default for safer cleaning
+- Improved SQL queries to handle parent-child relationships
+
+### 1.2.1
 - Fixed compatibility issues with other plugins (WP-Optimize Premium)
 - Improved menu item counting using direct database queries
 - Added error suppression for third-party plugin warnings

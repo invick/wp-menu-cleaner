@@ -14,6 +14,7 @@ jQuery(document).ready(function($) {
         
         var menuId = $('#menu_id').val();
         var numItems = parseInt($('#num_items').val());
+        var skipParents = $('#skip_parents').is(':checked');
         
         // Validation
         if (!menuId) {
@@ -32,10 +33,10 @@ jQuery(document).ready(function($) {
         }
         
         // Start deletion process
-        startDeletion(menuId, numItems);
+        startDeletion(menuId, numItems, skipParents);
     });
     
-    function startDeletion(menuId, numItems) {
+    function startDeletion(menuId, numItems, skipParents) {
         isDeleting = true;
         totalToDelete = numItems;
         totalDeleted = 0;
@@ -56,10 +57,10 @@ jQuery(document).ready(function($) {
         $('#menu-cleaner-notices').empty();
         
         // Start batch deletion
-        deleteBatch(menuId, 0);
+        deleteBatch(menuId, 0, skipParents);
     }
     
-    function deleteBatch(menuId, offset) {
+    function deleteBatch(menuId, offset, skipParents) {
         var batchSize = 10; // Delete 10 items at a time
         var remaining = totalToDelete - totalDeleted;
         
@@ -76,7 +77,8 @@ jQuery(document).ready(function($) {
                 nonce: menu_cleaner_ajax.nonce,
                 menu_id: menuId,
                 batch_size: Math.min(batchSize, remaining),
-                offset: 0 // Always 0 because we're deleting from the end
+                offset: 0, // Always 0 because we're deleting from the end
+                skip_parents: skipParents ? 'true' : 'false'
             },
             success: function(response) {
                 if (response.success) {
@@ -103,7 +105,7 @@ jQuery(document).ready(function($) {
                     // Continue if more items to delete
                     if (totalDeleted < totalToDelete && response.data.count > 0) {
                         setTimeout(function() {
-                            deleteBatch(menuId, 0);
+                            deleteBatch(menuId, 0, skipParents);
                         }, 100); // Small delay between batches
                     } else {
                         completeDeletion();
