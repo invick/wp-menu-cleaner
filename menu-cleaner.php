@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.2.0
+ * Version: 1.2.1
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.2.0');
+define('MENU_CLEANER_VERSION', '1.2.1');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -40,6 +40,22 @@ function menu_cleaner_add_admin_menu() {
 
 // Enqueue scripts and styles
 add_action('admin_enqueue_scripts', 'menu_cleaner_enqueue_scripts');
+
+// Helper function to safely get menu item count
+function menu_cleaner_get_menu_item_count($menu_id) {
+    global $wpdb;
+    
+    // Direct database query to avoid triggering other plugins' hooks
+    $count = $wpdb->get_var($wpdb->prepare("
+        SELECT COUNT(*) 
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+        WHERE p.post_type = 'nav_menu_item'
+        AND tr.term_taxonomy_id = %d
+    ", $menu_id));
+    
+    return intval($count);
+}
 
 function menu_cleaner_enqueue_scripts($hook) {
     if ('tools_page_menu-cleaner' !== $hook) {
@@ -75,6 +91,9 @@ function menu_cleaner_admin_page() {
     
     // Get all menus
     $menus = wp_get_nav_menus();
+    
+    // Set error reporting level to suppress warnings from other plugins
+    $old_error_level = error_reporting(E_ERROR | E_PARSE);
     ?>
     <div class="wrap">
         <h1><?php echo esc_html__('Clean Menu Items', 'menu-cleaner'); ?></h1>
@@ -98,8 +117,8 @@ function menu_cleaner_admin_page() {
                                 <option value="<?php echo esc_attr($menu->term_id); ?>">
                                     <?php echo esc_html($menu->name); ?> 
                                     (<?php 
-                                        $items = wp_get_nav_menu_items($menu->term_id);
-                                        $count = is_array($items) ? count($items) : 0;
+                                        // Use direct database query to avoid plugin conflicts
+                                        $count = menu_cleaner_get_menu_item_count($menu->term_id);
                                         printf(_n('%d item', '%d items', $count, 'menu-cleaner'), $count);
                                     ?>)
                                 </option>
@@ -139,6 +158,9 @@ function menu_cleaner_admin_page() {
         </form>
     </div>
     <?php
+    
+    // Restore error reporting level
+    error_reporting($old_error_level);
 }
 
 // AJAX handler for deleting menu items
@@ -215,8 +237,8 @@ function menu_cleaner_ajax_get_count() {
         wp_send_json_error(array('message' => __('Invalid menu ID', 'menu-cleaner')));
     }
     
-    $items = wp_get_nav_menu_items($menu_id);
-    $count = is_array($items) ? count($items) : 0;
+    // Use our safe count function
+    $count = menu_cleaner_get_menu_item_count($menu_id);
     
     wp_send_json_success(array('count' => $count));
 }

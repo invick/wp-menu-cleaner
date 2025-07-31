@@ -132,7 +132,13 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
-### 1.2.0 - by Victor Adams
+### 1.2.1 - by Victor Adams
+- Fixed compatibility issues with other plugins (WP-Optimize Premium)
+- Improved menu item counting using direct database queries
+- Added error suppression for third-party plugin warnings
+- Enhanced stability when working with large menus
+
+### 1.2.0
 - Added menu selection dropdown with item counts
 - Implemented AJAX-based deletion with real-time progress bar
 - Added deletion log showing each removed item
