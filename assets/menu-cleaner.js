@@ -2,7 +2,9 @@ jQuery(document).ready(function($) {
     var isDeleting = false;
     var totalToDelete = 0;
     var totalDeleted = 0;
+    var totalSkipped = 0;
     var deletedItems = [];
+    var skippedItems = [];
     
     // Handle delete button click
     $('#clean-menu-items').on('click', function(e) {
@@ -40,7 +42,9 @@ jQuery(document).ready(function($) {
         isDeleting = true;
         totalToDelete = numItems;
         totalDeleted = 0;
+        totalSkipped = 0;
         deletedItems = [];
+        skippedItems = [];
         
         // Show progress
         $('#menu-cleaner-progress').show();
@@ -84,16 +88,39 @@ jQuery(document).ready(function($) {
                 if (response.success) {
                     totalDeleted += response.data.count;
                     
+                    // Handle skipped items
+                    if (response.data.skipped && response.data.skipped.length > 0) {
+                        totalSkipped += response.data.skipped.length;
+                        response.data.skipped.forEach(function(item) {
+                            skippedItems.push(item.id);
+                            var logEntry = $('<div class="log-entry log-entry-skipped">').html(
+                                '<span class="dashicons dashicons-minus"></span> Skipped: ' + 
+                                '<strong>' + escapeHtml(item.title) + '</strong> ' +
+                                '(ID: ' + item.id + ', Order: ' + item.order + ') - ' +
+                                '<em>' + escapeHtml(item.reason) + '</em>'
+                            );
+                            $('#deletion-log').prepend(logEntry);
+                        });
+                    }
+                    
                     // Update progress
-                    var progress = (totalDeleted / totalToDelete) * 100;
-                    $('#progress-current').text(totalDeleted);
+                    var totalProcessed = totalDeleted + totalSkipped;
+                    var progress = Math.min((totalProcessed / totalToDelete) * 100, 100);
+                    $('#progress-current').text(totalProcessed);
+                    $('#deleted-count').text(totalDeleted);
+                    $('#skipped-count').text(totalSkipped);
                     $('.progress-fill').css('width', progress + '%');
                     
-                    // Add to log
+                    // Show details if we have skipped items
+                    if (totalSkipped > 0) {
+                        $('#progress-details').show();
+                    }
+                    
+                    // Add to log for deleted items
                     if (response.data.deleted.length > 0) {
                         response.data.deleted.forEach(function(item) {
                             deletedItems.push(item.id);
-                            var logEntry = $('<div class="log-entry">').html(
+                            var logEntry = $('<div class="log-entry log-entry-deleted">').html(
                                 '<span class="dashicons dashicons-yes"></span> Deleted: ' + 
                                 '<strong>' + escapeHtml(item.title) + '</strong> ' +
                                 '(ID: ' + item.id + ', Order: ' + item.order + ')'
@@ -102,8 +129,9 @@ jQuery(document).ready(function($) {
                         });
                     }
                     
-                    // Continue if more items to delete
-                    if (totalDeleted < totalToDelete && response.data.count > 0) {
+                    // Continue if more items to process
+                    var totalProcessed = totalDeleted + totalSkipped;
+                    if (totalProcessed < totalToDelete && (response.data.count > 0 || response.data.skipped_count > 0)) {
                         setTimeout(function() {
                             deleteBatch(menuId, 0, skipParents);
                         }, 100); // Small delay between batches
@@ -126,13 +154,21 @@ jQuery(document).ready(function($) {
         isDeleting = false;
         
         // Show success message
-        if (totalDeleted > 0) {
-            showNotice('success', 'Successfully deleted ' + totalDeleted + ' menu items.');
+        if (totalDeleted > 0 || totalSkipped > 0) {
+            var message = 'Process completed: ';
+            if (totalDeleted > 0) {
+                message += totalDeleted + ' items deleted';
+            }
+            if (totalSkipped > 0) {
+                if (totalDeleted > 0) message += ', ';
+                message += totalSkipped + ' items skipped';
+            }
+            showNotice('success', message);
             
             // Update menu item count in dropdown
             updateMenuCount($('#menu_id').val());
         } else {
-            showNotice('info', 'No items were deleted.');
+            showNotice('info', 'No items were processed.');
         }
         
         resetForm();

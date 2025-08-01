@@ -136,7 +136,14 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
-### 1.3.0 - by Victor Adams
+### 1.3.1 - by Victor Adams
+- Added identification of skipped items in the deletion log
+- Shows which items were skipped and why (parent with sub-items or child of protected parent)
+- Updated progress display to show both deleted and skipped counts
+- Visual distinction between deleted (green checkmark) and skipped (yellow dash) items
+- Improved transparency in the deletion process
+
+### 1.3.0
 - Added "Skip Parent Items" option to preserve hierarchical menu structures
 - Parent items with sub-items can now be protected from deletion
 - Sub-items of protected parent items are also preserved

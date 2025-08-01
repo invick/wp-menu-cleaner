@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.3.0
+ * Version: 1.3.1
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.3.0');
+define('MENU_CLEANER_VERSION', '1.3.1');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -157,7 +157,11 @@ function menu_cleaner_admin_page() {
                         <div class="progress-fill"></div>
                     </div>
                     <div class="progress-text">
-                        <span id="progress-current">0</span> / <span id="progress-total">0</span> <?php _e('items deleted', 'menu-cleaner'); ?>
+                        <span id="progress-current">0</span> / <span id="progress-total">0</span> <?php _e('items processed', 'menu-cleaner'); ?>
+                        <span id="progress-details" style="display: none;">
+                            (<span id="deleted-count">0</span> <?php _e('deleted', 'menu-cleaner'); ?>, 
+                            <span id="skipped-count">0</span> <?php _e('skipped', 'menu-cleaner'); ?>)
+                        </span>
                     </div>
                 </div>
                 <div id="deletion-log" class="deletion-log"></div>
@@ -253,6 +257,63 @@ function menu_cleaner_ajax_delete_items() {
     
     $menu_items = $wpdb->get_results($query);
     $deleted_items = array();
+    $skipped_items = array();
+    
+    // If skip_parents is enabled, also get the items we're skipping
+    if ($skip_parents && $batch_size > 0) {
+        // Get parent items and their children that we're skipping
+        $skip_query = $wpdb->prepare("
+            SELECT p.ID, p.post_title, p.menu_order, 
+                   pm_parent.meta_value as parent_id,
+                   CASE 
+                       WHEN EXISTS (
+                           SELECT 1 FROM {$wpdb->postmeta} pm2
+                           WHERE pm2.meta_key = '_menu_item_menu_item_parent'
+                           AND pm2.meta_value = CAST(p.ID AS CHAR)
+                           AND pm2.meta_value != '0'
+                       ) THEN 'parent'
+                       ELSE 'child'
+                   END as skip_reason
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+            LEFT JOIN {$wpdb->postmeta} pm_parent ON p.ID = pm_parent.post_id 
+                AND pm_parent.meta_key = '_menu_item_menu_item_parent'
+            WHERE p.post_type = 'nav_menu_item'
+            AND tr.term_taxonomy_id = %d
+            AND (
+                EXISTS (
+                    SELECT 1 FROM {$wpdb->postmeta} pm2
+                    WHERE pm2.meta_key = '_menu_item_menu_item_parent'
+                    AND pm2.meta_value = CAST(p.ID AS CHAR)
+                    AND pm2.meta_value != '0'
+                )
+                OR pm_parent.meta_value IN (
+                    SELECT CAST(p2.ID AS CHAR) FROM {$wpdb->posts} p2
+                    INNER JOIN {$wpdb->term_relationships} tr2 ON p2.ID = tr2.object_id
+                    WHERE p2.post_type = 'nav_menu_item'
+                    AND tr2.term_taxonomy_id = %d
+                    AND EXISTS (
+                        SELECT 1 FROM {$wpdb->postmeta} pm3
+                        WHERE pm3.meta_key = '_menu_item_menu_item_parent'
+                        AND pm3.meta_value = CAST(p2.ID AS CHAR)
+                        AND pm3.meta_value != '0'
+                    )
+                )
+            )
+            ORDER BY p.menu_order DESC
+            LIMIT %d
+        ", $menu_id, $menu_id, min($batch_size * 2, 20)); // Limit to reasonable number
+        
+        $skipped_results = $wpdb->get_results($skip_query);
+        foreach ($skipped_results as $item) {
+            $skipped_items[] = array(
+                'id' => $item->ID,
+                'title' => $item->post_title ?: __('(no title)', 'menu-cleaner'),
+                'order' => $item->menu_order,
+                'reason' => $item->skip_reason === 'parent' ? __('Has sub-items', 'menu-cleaner') : __('Child of protected parent', 'menu-cleaner')
+            );
+        }
+    }
     
     foreach ($menu_items as $item) {
         $result = wp_delete_post($item->ID, true);
@@ -271,6 +332,8 @@ function menu_cleaner_ajax_delete_items() {
     wp_send_json_success(array(
         'deleted' => $deleted_items,
         'count' => count($deleted_items),
+        'skipped' => $skipped_items,
+        'skipped_count' => count($skipped_items),
         'has_more' => count($menu_items) === $batch_size
     ));
 }
