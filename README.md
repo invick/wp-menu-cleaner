@@ -136,7 +136,18 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
-### 1.4.1 - by Victor Adams
+### 1.5.0 - by Victor Adams (Security Update)
+- **CRITICAL SECURITY FIXES**:
+  - Fixed SQL injection vulnerability in parent/child exclusion queries
+  - Removed error reporting manipulation (security risk)
+  - Enhanced input validation and sanitization
+  - Added menu existence verification
+  - Limited batch size to prevent abuse (max 50 items per batch)
+- Now uses proper prepared statements with placeholders
+- All user inputs are validated with absint() for integers
+- Added additional security checks for menu operations
+
+### 1.4.1
 - Fixed critical bug where menu item titles showed "(no title)" 
 - Now retrieves menu item title BEFORE deletion (not after)
 - Ensures accurate navigation labels in deletion log
@@ -197,6 +208,16 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 ## License
 
 GPL v2 or later
+
+## Security
+
+This plugin implements multiple security measures:
+- **CSRF Protection**: All forms use WordPress nonces
+- **Authorization**: Requires `manage_options` capability (admin only)
+- **Input Validation**: All inputs are sanitized and validated
+- **SQL Injection Prevention**: Uses prepared statements with placeholders
+- **XSS Prevention**: All output is properly escaped
+- **Direct Access Protection**: Files cannot be accessed directly
 
 ## Support
 

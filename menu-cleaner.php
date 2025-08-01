@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.4.1
+ * Version: 1.5.0
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.4.1');
+define('MENU_CLEANER_VERSION', '1.5.0');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -109,9 +109,6 @@ function menu_cleaner_admin_page() {
     
     // Get all menus
     $menus = wp_get_nav_menus();
-    
-    // Set error reporting level to suppress warnings from other plugins
-    $old_error_level = error_reporting(E_ERROR | E_PARSE);
     ?>
     <div class="wrap">
         <h1><?php echo esc_html__('Clean Menu Items', 'menu-cleaner'); ?></h1>
@@ -192,9 +189,6 @@ function menu_cleaner_admin_page() {
         </form>
     </div>
     <?php
-    
-    // Restore error reporting level
-    error_reporting($old_error_level);
 }
 
 // AJAX handler for deleting menu items
@@ -211,13 +205,31 @@ function menu_cleaner_ajax_delete_items() {
         wp_die(__('Insufficient permissions', 'menu-cleaner'));
     }
     
-    $menu_id = isset($_POST['menu_id']) ? intval($_POST['menu_id']) : 0;
-    $batch_size = isset($_POST['batch_size']) ? intval($_POST['batch_size']) : 10;
-    $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+    // Validate and sanitize inputs
+    $menu_id = isset($_POST['menu_id']) ? absint($_POST['menu_id']) : 0;
+    $batch_size = isset($_POST['batch_size']) ? absint($_POST['batch_size']) : 10;
+    $offset = isset($_POST['offset']) ? absint($_POST['offset']) : 0;
     $skip_parents = isset($_POST['skip_parents']) && $_POST['skip_parents'] === 'true';
     
-    if (!$menu_id) {
+    // Validate menu ID
+    if (!$menu_id || $menu_id <= 0) {
         wp_send_json_error(array('message' => __('Invalid menu ID', 'menu-cleaner')));
+    }
+    
+    // Validate batch size (limit to prevent abuse)
+    if ($batch_size <= 0 || $batch_size > 50) {
+        $batch_size = 10;
+    }
+    
+    // Validate offset
+    if ($offset < 0) {
+        $offset = 0;
+    }
+    
+    // Verify the menu exists
+    $menu = wp_get_nav_menu_object($menu_id);
+    if (!$menu) {
+        wp_send_json_error(array('message' => __('Menu not found', 'menu-cleaner')));
     }
     
     global $wpdb;
@@ -237,29 +249,47 @@ function menu_cleaner_ajax_delete_items() {
         ", $menu_id));
         
         // Get menu items to delete, excluding parents and their children
-        $exclude_sql = '';
         if (!empty($parent_ids)) {
-            $exclude_sql = "AND p.ID NOT IN (" . implode(',', array_map('intval', $parent_ids)) . ")
-                            AND (pm.meta_value IS NULL OR pm.meta_value = '0' OR pm.meta_value NOT IN (" . implode(',', array_map('intval', $parent_ids)) . "))";
+            // Use placeholders for safety
+            $placeholders = implode(',', array_fill(0, count($parent_ids), '%d'));
+            $query_args = array_merge(array($menu_id), $parent_ids, $parent_ids, array($batch_size, $offset));
+            
+            $query = $wpdb->prepare("
+                SELECT p.ID, p.post_title, p.menu_order
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_menu_item_menu_item_parent'
+                WHERE p.post_type = 'nav_menu_item'
+                AND tr.term_taxonomy_id = %d
+                AND NOT EXISTS (
+                    SELECT 1 FROM {$wpdb->postmeta} pm2
+                    WHERE pm2.meta_key = '_menu_item_menu_item_parent'
+                    AND pm2.meta_value = CAST(p.ID AS CHAR)
+                    AND pm2.meta_value != '0'
+                )
+                AND p.ID NOT IN ($placeholders)
+                AND (pm.meta_value IS NULL OR pm.meta_value = '0' OR pm.meta_value NOT IN ($placeholders))
+                ORDER BY p.menu_order DESC
+                LIMIT %d OFFSET %d
+            ", ...$query_args);
+        } else {
+            $query = $wpdb->prepare("
+                SELECT p.ID, p.post_title, p.menu_order
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_menu_item_menu_item_parent'
+                WHERE p.post_type = 'nav_menu_item'
+                AND tr.term_taxonomy_id = %d
+                AND NOT EXISTS (
+                    SELECT 1 FROM {$wpdb->postmeta} pm2
+                    WHERE pm2.meta_key = '_menu_item_menu_item_parent'
+                    AND pm2.meta_value = CAST(p.ID AS CHAR)
+                    AND pm2.meta_value != '0'
+                )
+                ORDER BY p.menu_order DESC
+                LIMIT %d OFFSET %d
+            ", $menu_id, $batch_size, $offset);
         }
-        
-        $query = $wpdb->prepare("
-            SELECT p.ID, p.post_title, p.menu_order
-            FROM {$wpdb->posts} p
-            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
-            LEFT JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id AND pm.meta_key = '_menu_item_menu_item_parent'
-            WHERE p.post_type = 'nav_menu_item'
-            AND tr.term_taxonomy_id = %d
-            AND NOT EXISTS (
-                SELECT 1 FROM {$wpdb->postmeta} pm2
-                WHERE pm2.meta_key = '_menu_item_menu_item_parent'
-                AND pm2.meta_value = CAST(p.ID AS CHAR)
-                AND pm2.meta_value != '0'
-            )
-            $exclude_sql
-            ORDER BY p.menu_order DESC
-            LIMIT %d OFFSET %d
-        ", $menu_id, $batch_size, $offset);
     } else {
         // Original query - delete all items regardless of parent/child relationship
         $query = $wpdb->prepare("
