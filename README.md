@@ -136,7 +136,14 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
-### 1.3.1 - by Victor Adams
+### 1.4.0 - by Victor Adams
+- Fixed menu item titles to show actual navigation labels instead of post titles
+- Now uses wp_setup_nav_menu_item() for accurate menu item names
+- Deletion log now shows the same titles users see in the menu editor
+- Improved readability and accuracy of deletion/skip logs
+- Confirmed deletion only happens on manual button click (no auto-deletion)
+
+### 1.3.1
 - Added identification of skipped items in the deletion log
 - Shows which items were skipped and why (parent with sub-items or child of protected parent)
 - Updated progress display to show both deleted and skipped counts

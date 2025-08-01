@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.3.1
+ * Version: 1.4.0
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.3.1');
+define('MENU_CLEANER_VERSION', '1.4.0');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -55,6 +55,24 @@ function menu_cleaner_get_menu_item_count($menu_id) {
     ", $menu_id));
     
     return intval($count);
+}
+
+// Helper function to get proper menu item title
+function menu_cleaner_get_item_title($item_id) {
+    // Get the menu item with all its properties
+    $menu_item = wp_setup_nav_menu_item(get_post($item_id));
+    
+    if ($menu_item && isset($menu_item->title) && !empty($menu_item->title)) {
+        return $menu_item->title;
+    }
+    
+    // Fallback to post title if navigation label is not set
+    $post = get_post($item_id);
+    if ($post && !empty($post->post_title)) {
+        return $post->post_title;
+    }
+    
+    return __('(no title)', 'menu-cleaner');
 }
 
 function menu_cleaner_enqueue_scripts($hook) {
@@ -308,7 +326,7 @@ function menu_cleaner_ajax_delete_items() {
         foreach ($skipped_results as $item) {
             $skipped_items[] = array(
                 'id' => $item->ID,
-                'title' => $item->post_title ?: __('(no title)', 'menu-cleaner'),
+                'title' => menu_cleaner_get_item_title($item->ID),
                 'order' => $item->menu_order,
                 'reason' => $item->skip_reason === 'parent' ? __('Has sub-items', 'menu-cleaner') : __('Child of protected parent', 'menu-cleaner')
             );
@@ -320,7 +338,7 @@ function menu_cleaner_ajax_delete_items() {
         if ($result !== false) {
             $deleted_items[] = array(
                 'id' => $item->ID,
-                'title' => $item->post_title ?: __('(no title)', 'menu-cleaner'),
+                'title' => menu_cleaner_get_item_title($item->ID),
                 'order' => $item->menu_order
             );
         }
