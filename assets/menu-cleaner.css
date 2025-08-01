@@ -167,6 +167,10 @@
     max-width: 400px;
 }
 
+#menu-cleaner-form select#deletion_mode {
+    max-width: 300px;
+}
+
 /* Responsive adjustments */
 @media screen and (max-width: 782px) {
     .progress-bar {

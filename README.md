@@ -4,17 +4,26 @@ A WordPress plugin by Victor Adams that helps you clean up your navigation menus
 
 ## Description
 
-Menu Cleaner is a utility plugin designed to help WordPress administrators manage large navigation menus. It allows you to select any menu in your WordPress site and remove items based on their menu order. With real-time progress tracking, you can watch as items are deleted in batches, making it ideal for cleaning up test data or managing oversized menus.
+Menu Cleaner is a utility plugin designed to help WordPress administrators manage large navigation menus. It allows you to select any menu in your WordPress site and remove items in multiple ways:
+- By count (delete a specific number of items based on menu order)
+- Draft items (delete menu items linking to draft posts/pages)
+- Orphaned items (delete menu items linking to deleted content)
+
+With real-time progress tracking, you can watch as items are deleted in batches, making it ideal for cleaning up test data, managing oversized menus, or removing broken menu links.
 
 ## Features
 
+- **Multiple Deletion Modes**:
+  - **Delete by Count**: Remove a specific number of items (1-500)
+  - **Delete Draft Items**: Remove menu items linking to draft/pending posts
+  - **Delete Orphaned Items**: Remove menu items linking to deleted content
 - **Menu Selection**: Choose any menu from your WordPress site to clean
-- **Customizable Deletion**: Specify how many items to delete (1-500)
+- **Smart Item Detection**: Automatically identifies draft and orphaned menu items
 - **Skip Parent Items**: Option to preserve menu items that have sub-items (and their children)
 - **Real-time Progress Bar**: Visual progress indicator with percentage completion
 - **AJAX-powered**: Batch processing prevents timeouts on large operations
 - **Deletion Log**: Live feed showing each deleted item with ID and title
-- **Item Count Display**: Shows current item count for each menu
+- **Dynamic Count Display**: Shows relevant item count based on selected deletion mode
 - **Safe Operation**: Requires administrator permissions (`manage_options` capability)
 - **Confirmation Dialog**: Prevents accidental deletions
 - **Complete Removal**: Uses `wp_delete_post()` with hard delete for thorough cleanup
@@ -36,22 +45,41 @@ Menu Cleaner is a utility plugin designed to help WordPress administrators manag
 
 1. After activation, go to **Tools → Clean Menu Items** in your WordPress admin
 2. Select a menu from the dropdown (shows item count for each menu)
-3. Enter the number of items you want to delete (1-500)
-4. Choose whether to skip parent items (enabled by default):
+3. Choose a deletion mode:
+   - **Delete by Count**: Removes a specific number of items from the end of the menu
+   - **Delete Draft Items**: Removes all menu items linking to draft or pending posts/pages
+   - **Delete Orphaned Items**: Removes all menu items linking to deleted content
+4. If using "Delete by Count" mode, enter the number of items you want to delete (1-500)
+5. Choose whether to skip parent items (enabled by default):
    - When **checked**: Parent items and all their sub-items will be preserved
    - When **unchecked**: All items will be deleted regardless of hierarchy
-5. Click the "Delete Menu Items" button
-6. Confirm the action in the popup dialog
-7. Watch the real-time progress bar as items are deleted
-8. Review the deletion log showing each removed item
-9. The menu dropdown automatically updates with the new item count
+6. Click the "Delete Menu Items" button
+7. Confirm the action in the popup dialog
+8. Watch the real-time progress bar as items are deleted
+9. Review the deletion log showing each removed item
+10. The menu dropdown automatically updates with the new item count
 
 ### What Gets Deleted
 
-- The plugin identifies menu items by `post_type = 'nav_menu_item'`
+Based on the selected deletion mode:
+
+**Delete by Count**:
 - Items are sorted by `menu_order` in descending order (highest/last items first)
-- Only items from the selected menu are affected
+- Deletes the specified number of items from the end of the menu
 - You can delete between 1 and 500 items per operation
+
+**Delete Draft Items**:
+- Identifies menu items linking to posts/pages with status: draft, pending, or auto-draft
+- Deletes all matching items regardless of position
+- Shows count of draft items before deletion
+
+**Delete Orphaned Items**:
+- Identifies menu items where the linked post/page/category no longer exists
+- Excludes custom links (they are never considered orphaned)
+- Deletes all broken menu links in the selected menu
+
+All modes:
+- Only items from the selected menu are affected
 - Items are deleted in batches of 10 to prevent timeouts
 - Each deleted item is logged with its ID, title, and menu order
 
@@ -135,6 +163,18 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 ```
 
 ## Changelog
+
+### 1.6.0 - Multiple Deletion Modes
+- **NEW FEATURES**:
+  - Added deletion mode selector with three options
+  - **Delete Draft Items**: Remove menu items linking to draft/pending posts
+  - **Delete Orphaned Items**: Remove menu items linking to deleted content
+  - Auto-detection of draft and orphaned items with live counts
+  - Dynamic UI that hides item count input for draft/orphaned modes
+- Improved progress tracking for variable-length operations
+- Updated confirmation messages based on deletion mode
+- Enhanced menu dropdown to show mode-specific counts
+- Added support for detecting orphaned taxonomy items
 
 ### 1.5.0 - by Victor Adams (Security Update)
 - **CRITICAL SECURITY FIXES**:

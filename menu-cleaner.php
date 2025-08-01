@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.5.0
+ * Version: 1.6.0
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.5.0');
+define('MENU_CLEANER_VERSION', '1.6.0');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -52,6 +52,63 @@ function menu_cleaner_get_menu_item_count($menu_id) {
         INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
         WHERE p.post_type = 'nav_menu_item'
         AND tr.term_taxonomy_id = %d
+    ", $menu_id));
+    
+    return intval($count);
+}
+
+// Helper function to get count of draft menu items
+function menu_cleaner_get_draft_item_count($menu_id) {
+    global $wpdb;
+    
+    $count = $wpdb->get_var($wpdb->prepare("
+        SELECT COUNT(DISTINCT p.ID)
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+        INNER JOIN {$wpdb->postmeta} pm_object ON p.ID = pm_object.post_id
+        LEFT JOIN {$wpdb->posts} linked_post ON pm_object.meta_value = linked_post.ID
+        WHERE p.post_type = 'nav_menu_item'
+        AND tr.term_taxonomy_id = %d
+        AND pm_object.meta_key = '_menu_item_object_id'
+        AND pm_object.meta_value != '0'
+        AND (
+            linked_post.post_status = 'draft' 
+            OR linked_post.post_status = 'pending'
+            OR linked_post.post_status = 'auto-draft'
+        )
+    ", $menu_id));
+    
+    return intval($count);
+}
+
+// Helper function to get count of orphaned menu items
+function menu_cleaner_get_orphaned_item_count($menu_id) {
+    global $wpdb;
+    
+    $count = $wpdb->get_var($wpdb->prepare("
+        SELECT COUNT(DISTINCT p.ID)
+        FROM {$wpdb->posts} p
+        INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+        INNER JOIN {$wpdb->postmeta} pm_type ON p.ID = pm_type.post_id
+        INNER JOIN {$wpdb->postmeta} pm_object ON p.ID = pm_object.post_id
+        LEFT JOIN {$wpdb->posts} linked_post ON (
+            pm_object.meta_value = linked_post.ID 
+            AND pm_type.meta_value IN ('post', 'page')
+        )
+        LEFT JOIN {$wpdb->terms} linked_term ON (
+            pm_object.meta_value = linked_term.term_id 
+            AND pm_type.meta_value = 'taxonomy'
+        )
+        WHERE p.post_type = 'nav_menu_item'
+        AND tr.term_taxonomy_id = %d
+        AND pm_type.meta_key = '_menu_item_type'
+        AND pm_object.meta_key = '_menu_item_object_id'
+        AND pm_object.meta_value != '0'
+        AND pm_type.meta_value != 'custom'
+        AND (
+            (pm_type.meta_value IN ('post', 'page') AND linked_post.ID IS NULL)
+            OR (pm_type.meta_value = 'taxonomy' AND linked_term.term_id IS NULL)
+        )
     ", $menu_id));
     
     return intval($count);
@@ -144,6 +201,19 @@ function menu_cleaner_admin_page() {
                 </tr>
                 <tr>
                     <th scope="row">
+                        <label for="deletion_mode"><?php _e('Deletion Mode', 'menu-cleaner'); ?></label>
+                    </th>
+                    <td>
+                        <select name="deletion_mode" id="deletion_mode" class="regular-text">
+                            <option value="count"><?php _e('Delete by Count', 'menu-cleaner'); ?></option>
+                            <option value="draft"><?php _e('Delete Draft Items', 'menu-cleaner'); ?></option>
+                            <option value="orphaned"><?php _e('Delete Orphaned Items', 'menu-cleaner'); ?></option>
+                        </select>
+                        <p class="description"><?php _e('Choose how to select items for deletion.', 'menu-cleaner'); ?></p>
+                    </td>
+                </tr>
+                <tr id="num_items_row">
+                    <th scope="row">
                         <label for="num_items"><?php _e('Number of Items to Delete', 'menu-cleaner'); ?></label>
                     </th>
                     <td>
@@ -210,6 +280,7 @@ function menu_cleaner_ajax_delete_items() {
     $batch_size = isset($_POST['batch_size']) ? absint($_POST['batch_size']) : 10;
     $offset = isset($_POST['offset']) ? absint($_POST['offset']) : 0;
     $skip_parents = isset($_POST['skip_parents']) && $_POST['skip_parents'] === 'true';
+    $deletion_mode = isset($_POST['deletion_mode']) ? sanitize_text_field($_POST['deletion_mode']) : 'count';
     
     // Validate menu ID
     if (!$menu_id || $menu_id <= 0) {
@@ -234,8 +305,57 @@ function menu_cleaner_ajax_delete_items() {
     
     global $wpdb;
     
-    // Build query based on skip_parents option
-    if ($skip_parents) {
+    // Build query based on deletion mode
+    if ($deletion_mode === 'draft') {
+        // Get menu items that link to draft posts/pages
+        $query = $wpdb->prepare("
+            SELECT DISTINCT p.ID, p.post_title, p.menu_order
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+            INNER JOIN {$wpdb->postmeta} pm_object ON p.ID = pm_object.post_id
+            LEFT JOIN {$wpdb->posts} linked_post ON pm_object.meta_value = linked_post.ID
+            WHERE p.post_type = 'nav_menu_item'
+            AND tr.term_taxonomy_id = %d
+            AND pm_object.meta_key = '_menu_item_object_id'
+            AND pm_object.meta_value != '0'
+            AND (
+                linked_post.post_status = 'draft' 
+                OR linked_post.post_status = 'pending'
+                OR linked_post.post_status = 'auto-draft'
+            )
+            ORDER BY p.menu_order DESC
+            LIMIT %d OFFSET %d
+        ", $menu_id, $batch_size, $offset);
+    } elseif ($deletion_mode === 'orphaned') {
+        // Get menu items where the linked object no longer exists
+        $query = $wpdb->prepare("
+            SELECT DISTINCT p.ID, p.post_title, p.menu_order
+            FROM {$wpdb->posts} p
+            INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+            INNER JOIN {$wpdb->postmeta} pm_type ON p.ID = pm_type.post_id
+            INNER JOIN {$wpdb->postmeta} pm_object ON p.ID = pm_object.post_id
+            LEFT JOIN {$wpdb->posts} linked_post ON (
+                pm_object.meta_value = linked_post.ID 
+                AND pm_type.meta_value IN ('post', 'page')
+            )
+            LEFT JOIN {$wpdb->terms} linked_term ON (
+                pm_object.meta_value = linked_term.term_id 
+                AND pm_type.meta_value = 'taxonomy'
+            )
+            WHERE p.post_type = 'nav_menu_item'
+            AND tr.term_taxonomy_id = %d
+            AND pm_type.meta_key = '_menu_item_type'
+            AND pm_object.meta_key = '_menu_item_object_id'
+            AND pm_object.meta_value != '0'
+            AND pm_type.meta_value != 'custom'
+            AND (
+                (pm_type.meta_value IN ('post', 'page') AND linked_post.ID IS NULL)
+                OR (pm_type.meta_value = 'taxonomy' AND linked_term.term_id IS NULL)
+            )
+            ORDER BY p.menu_order DESC
+            LIMIT %d OFFSET %d
+        ", $menu_id, $batch_size, $offset);
+    } elseif ($skip_parents) {
         // Get all parent IDs first
         $parent_ids = $wpdb->get_col($wpdb->prepare("
             SELECT DISTINCT pm.meta_value 
@@ -399,13 +519,23 @@ function menu_cleaner_ajax_get_count() {
     }
     
     $menu_id = isset($_POST['menu_id']) ? intval($_POST['menu_id']) : 0;
+    $deletion_mode = isset($_POST['deletion_mode']) ? sanitize_text_field($_POST['deletion_mode']) : 'count';
     
     if (!$menu_id) {
         wp_send_json_error(array('message' => __('Invalid menu ID', 'menu-cleaner')));
     }
     
-    // Use our safe count function
-    $count = menu_cleaner_get_menu_item_count($menu_id);
+    // Get count based on deletion mode
+    switch ($deletion_mode) {
+        case 'draft':
+            $count = menu_cleaner_get_draft_item_count($menu_id);
+            break;
+        case 'orphaned':
+            $count = menu_cleaner_get_orphaned_item_count($menu_id);
+            break;
+        default:
+            $count = menu_cleaner_get_menu_item_count($menu_id);
+    }
     
     wp_send_json_success(array('count' => $count));
 }
