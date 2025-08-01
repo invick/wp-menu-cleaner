@@ -136,7 +136,12 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
-### 1.4.0 - by Victor Adams
+### 1.4.1 - by Victor Adams
+- Fixed critical bug where menu item titles showed "(no title)" 
+- Now retrieves menu item title BEFORE deletion (not after)
+- Ensures accurate navigation labels in deletion log
+
+### 1.4.0
 - Fixed menu item titles to show actual navigation labels instead of post titles
 - Now uses wp_setup_nav_menu_item() for accurate menu item names
 - Deletion log now shows the same titles users see in the menu editor

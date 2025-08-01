@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.4.0
+ * Version: 1.4.1
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.4.0');
+define('MENU_CLEANER_VERSION', '1.4.1');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
 
@@ -334,11 +334,14 @@ function menu_cleaner_ajax_delete_items() {
     }
     
     foreach ($menu_items as $item) {
+        // Get the title BEFORE deleting
+        $item_title = menu_cleaner_get_item_title($item->ID);
+        
         $result = wp_delete_post($item->ID, true);
         if ($result !== false) {
             $deleted_items[] = array(
                 'id' => $item->ID,
-                'title' => menu_cleaner_get_item_title($item->ID),
+                'title' => $item_title,
                 'order' => $item->menu_order
             );
         }
