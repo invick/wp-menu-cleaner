@@ -1,10 +1,12 @@
 jQuery(document).ready(function($) {
     var isDeleting = false;
+    var shouldStop = false;
     var totalToDelete = 0;
     var totalDeleted = 0;
     var totalSkipped = 0;
     var deletedItems = [];
     var skippedItems = [];
+    var deletionSession = '';
     
     // Handle deletion mode change
     $('#deletion_mode').on('change', function() {
@@ -26,6 +28,8 @@ jQuery(document).ready(function($) {
         if (isDeleting) {
             return;
         }
+        
+        shouldStop = false;
         
         var menuId = $('#menu_id').val();
         var numItems = parseInt($('#num_items').val());
@@ -61,8 +65,18 @@ jQuery(document).ready(function($) {
         startDeletion(menuId, numItems, skipParents, deletionMode);
     });
     
+    // Handle stop button click
+    $('#stop-deletion').on('click', function(e) {
+        e.preventDefault();
+        shouldStop = true;
+        $(this).prop('disabled', true).text('Stopping...');
+    });
+    
     function startDeletion(menuId, numItems, skipParents, deletionMode) {
         isDeleting = true;
+        
+        // Generate a unique deletion session ID
+        deletionSession = Date.now().toString(36) + Math.random().toString(36).substr(2);
         
         // For draft/orphaned modes, we don't know the total upfront
         if (deletionMode === 'draft' || deletionMode === 'orphaned') {
@@ -114,6 +128,10 @@ jQuery(document).ready(function($) {
         $('.progress-fill').css('width', '0%');
         $('#deletion-log').empty();
         
+        // Show stop button, hide delete button
+        $('#clean-menu-items').hide();
+        $('#stop-deletion').show().prop('disabled', false).text('Stop Deletion');
+        
         // Disable form
         $('#menu-cleaner-form input, #menu-cleaner-form select').prop('disabled', true);
         $('.spinner').addClass('is-active');
@@ -123,6 +141,12 @@ jQuery(document).ready(function($) {
     }
     
     function deleteBatch(menuId, offset, skipParents, deletionMode) {
+        // Check if we should stop
+        if (shouldStop) {
+            completeDeletion(true);
+            return;
+        }
+        
         var batchSize = 10; // Delete 10 items at a time
         var remaining = (deletionMode === 'count') ? totalToDelete - totalDeleted : 999; // For draft/orphaned, continue until no more items
         
@@ -141,7 +165,8 @@ jQuery(document).ready(function($) {
                 batch_size: Math.min(batchSize, remaining),
                 offset: 0, // Always 0 because we're deleting from the end
                 skip_parents: skipParents ? 'true' : 'false',
-                deletion_mode: deletionMode || 'count'
+                deletion_mode: deletionMode || 'count',
+                deletion_session: deletionSession
             },
             success: function(response) {
                 if (response.success) {
@@ -200,6 +225,11 @@ jQuery(document).ready(function($) {
                         shouldContinue = totalProcessed < totalToDelete && (response.data.count > 0 || response.data.skipped_count > 0);
                     }
                     
+                    // Store the deletion session from response if available
+                    if (response.data.deletion_session) {
+                        deletionSession = response.data.deletion_session;
+                    }
+                    
                     if (shouldContinue) {
                         setTimeout(function() {
                             deleteBatch(menuId, 0, skipParents, deletionMode);
@@ -219,11 +249,25 @@ jQuery(document).ready(function($) {
         });
     }
     
-    function completeDeletion() {
+    function completeDeletion(wasStopped) {
         isDeleting = false;
+        shouldStop = false;
         
-        // Show success message
-        if (totalDeleted > 0 || totalSkipped > 0) {
+        // Show appropriate message
+        if (wasStopped) {
+            var message = 'Deletion process stopped. ';
+            if (totalDeleted > 0 || totalSkipped > 0) {
+                message += 'Progress: ';
+                if (totalDeleted > 0) {
+                    message += totalDeleted + ' items deleted';
+                }
+                if (totalSkipped > 0) {
+                    if (totalDeleted > 0) message += ', ';
+                    message += totalSkipped + ' items skipped';
+                }
+            }
+            showNotice('warning', message);
+        } else if (totalDeleted > 0 || totalSkipped > 0) {
             var message = 'Process completed: ';
             if (totalDeleted > 0) {
                 message += totalDeleted + ' items deleted';
@@ -232,6 +276,7 @@ jQuery(document).ready(function($) {
                 if (totalDeleted > 0) message += ', ';
                 message += totalSkipped + ' items skipped';
             }
+            message += '. You can restore these items from the <a href="' + menu_cleaner_ajax.restore_url + '">Restore Menu Items</a> page.';
             showNotice('success', message);
             
             // Update menu item count in dropdown
@@ -246,7 +291,10 @@ jQuery(document).ready(function($) {
     function resetForm() {
         $('.spinner').removeClass('is-active');
         $('#menu-cleaner-form input, #menu-cleaner-form select').prop('disabled', false);
+        $('#stop-deletion').hide();
+        $('#clean-menu-items').show();
         isDeleting = false;
+        shouldStop = false;
     }
     
     function updateMenuCount(menuId) {
@@ -312,7 +360,7 @@ jQuery(document).ready(function($) {
         }
         
         var notice = $('<div class="notice ' + noticeClass + ' is-dismissible">')
-            .html('<p><span class="dashicons ' + icon + '"></span> ' + escapeHtml(message) + '</p>');
+            .html('<p><span class="dashicons ' + icon + '"></span> ' + message + '</p>');
         
         $('#menu-cleaner-notices').html(notice);
         

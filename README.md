@@ -164,6 +164,24 @@ $num_items = max(1, min(500, $num_items)); // Change 500 to your desired maximum
 
 ## Changelog
 
+### 1.7.0 - Stop Button & Rollback Feature
+- **NEW FEATURES**:
+  - **Stop/Abort Button**: Cancel deletion process mid-operation
+  - **Rollback/Restore System**: Restore deleted menu items
+  - **Database History**: Stores complete menu item data before deletion
+  - **Restore Interface**: New "Restore Menu Items" admin page
+  - **Session-based Restoration**: View and restore by deletion session
+  - **Selective Restore**: Choose specific items or restore entire sessions
+- **IMPROVEMENTS**:
+  - Added progress details showing deleted vs skipped counts
+  - Maintains parent-child relationships when restoring
+  - Deletion sessions tracked with unique IDs
+  - Better user feedback with restore links after deletion
+- **SECURITY**:
+  - Fixed XSS vulnerabilities in admin URLs
+  - All restore operations require admin permissions
+  - Proper nonce verification on all AJAX endpoints
+
 ### 1.6.0 - Multiple Deletion Modes
 - **NEW FEATURES**:
   - Added deletion mode selector with three options

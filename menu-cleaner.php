@@ -3,7 +3,7 @@
  * Plugin Name: Menu Cleaner
  * Plugin URI: https://example.com/menu-cleaner
  * Description: Deletes menu items from any WordPress menu with progress tracking. Select menu, number of items, and watch real-time deletion progress.
- * Version: 1.6.0
+ * Version: 1.7.0
  * Requires at least: 5.0
  * Requires PHP: 7.2
  * Author: Victor Adams
@@ -20,9 +20,55 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MENU_CLEANER_VERSION', '1.6.0');
+define('MENU_CLEANER_VERSION', '1.7.0');
 define('MENU_CLEANER_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('MENU_CLEANER_PLUGIN_PATH', plugin_dir_path(__FILE__));
+define('MENU_CLEANER_DB_VERSION', '1.0');
+
+// Activation hook
+register_activation_hook(__FILE__, 'menu_cleaner_activate');
+
+function menu_cleaner_activate() {
+    menu_cleaner_create_db_table();
+    add_option('menu_cleaner_db_version', MENU_CLEANER_DB_VERSION);
+}
+
+// Create database table for storing deleted items
+function menu_cleaner_create_db_table() {
+    global $wpdb;
+    
+    $table_name = $wpdb->prefix . 'menu_cleaner_history';
+    $charset_collate = $wpdb->get_charset_collate();
+    
+    $sql = "CREATE TABLE $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        deletion_session varchar(32) NOT NULL,
+        menu_id bigint(20) NOT NULL,
+        menu_name varchar(200) NOT NULL,
+        item_id bigint(20) NOT NULL,
+        item_title text NOT NULL,
+        item_data longtext NOT NULL,
+        deleted_at datetime DEFAULT CURRENT_TIMESTAMP,
+        restored tinyint(1) DEFAULT 0,
+        PRIMARY KEY (id),
+        KEY deletion_session (deletion_session),
+        KEY menu_id (menu_id),
+        KEY deleted_at (deleted_at)
+    ) $charset_collate;";
+    
+    require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+    dbDelta($sql);
+}
+
+// Check DB version and update if needed
+add_action('plugins_loaded', 'menu_cleaner_update_db_check');
+
+function menu_cleaner_update_db_check() {
+    if (get_option('menu_cleaner_db_version') != MENU_CLEANER_DB_VERSION) {
+        menu_cleaner_create_db_table();
+        update_option('menu_cleaner_db_version', MENU_CLEANER_DB_VERSION);
+    }
+}
 
 // Hook to add admin menu
 add_action('admin_menu', 'menu_cleaner_add_admin_menu');
@@ -35,6 +81,15 @@ function menu_cleaner_add_admin_menu() {
         'manage_options',
         'menu-cleaner',
         'menu_cleaner_admin_page'
+    );
+    
+    add_submenu_page(
+        'tools.php',
+        'Restore Menu Items',
+        'Restore Menu Items',
+        'manage_options',
+        'menu-cleaner-restore',
+        'menu_cleaner_restore_page'
     );
 }
 
@@ -132,23 +187,98 @@ function menu_cleaner_get_item_title($item_id) {
     return __('(no title)', 'menu-cleaner');
 }
 
+// Helper function to save deleted item to history
+function menu_cleaner_save_deleted_item($item_id, $menu_id, $menu_name, $deletion_session) {
+    global $wpdb;
+    
+    // Get full menu item data before deletion
+    $menu_item = wp_setup_nav_menu_item(get_post($item_id));
+    if (!$menu_item) {
+        return false;
+    }
+    
+    // Get all post meta
+    $post_meta = get_post_meta($item_id);
+    
+    // Prepare item data for storage
+    $item_data = array(
+        'post_data' => array(
+            'post_title' => $menu_item->post_title,
+            'post_content' => $menu_item->post_content,
+            'post_status' => $menu_item->post_status,
+            'post_type' => $menu_item->post_type,
+            'menu_order' => $menu_item->menu_order,
+        ),
+        'meta_data' => $post_meta,
+        'menu_item_data' => array(
+            'type' => $menu_item->type,
+            'type_label' => $menu_item->type_label,
+            'title' => $menu_item->title,
+            'url' => $menu_item->url,
+            'object' => $menu_item->object,
+            'object_id' => $menu_item->object_id,
+            'parent' => $menu_item->menu_item_parent,
+            'position' => $menu_item->position,
+            'target' => $menu_item->target,
+            'attr_title' => $menu_item->attr_title,
+            'description' => $menu_item->description,
+            'classes' => $menu_item->classes,
+            'xfn' => $menu_item->xfn,
+        )
+    );
+    
+    $table_name = $wpdb->prefix . 'menu_cleaner_history';
+    
+    $result = $wpdb->insert(
+        $table_name,
+        array(
+            'deletion_session' => $deletion_session,
+            'menu_id' => $menu_id,
+            'menu_name' => $menu_name,
+            'item_id' => $item_id,
+            'item_title' => menu_cleaner_get_item_title($item_id),
+            'item_data' => wp_json_encode($item_data),
+            'deleted_at' => current_time('mysql'),
+            'restored' => 0
+        ),
+        array('%s', '%d', '%s', '%d', '%s', '%s', '%s', '%d')
+    );
+    
+    return $result !== false;
+}
+
 function menu_cleaner_enqueue_scripts($hook) {
-    if ('tools_page_menu-cleaner' !== $hook) {
+    if ('tools_page_menu-cleaner' !== $hook && 'tools_page_menu-cleaner-restore' !== $hook) {
         return;
     }
     
-    wp_enqueue_script(
-        'menu-cleaner-script',
-        MENU_CLEANER_PLUGIN_URL . 'assets/menu-cleaner.js',
-        array('jquery'),
-        MENU_CLEANER_VERSION,
-        true
-    );
+    if ('tools_page_menu-cleaner' === $hook) {
+        wp_enqueue_script(
+            'menu-cleaner-script',
+            MENU_CLEANER_PLUGIN_URL . 'assets/menu-cleaner.js',
+            array('jquery'),
+            MENU_CLEANER_VERSION,
+            true
+        );
+    } elseif ('tools_page_menu-cleaner-restore' === $hook) {
+        wp_enqueue_script(
+            'menu-cleaner-restore-script',
+            MENU_CLEANER_PLUGIN_URL . 'assets/menu-cleaner-restore.js',
+            array('jquery'),
+            MENU_CLEANER_VERSION,
+            true
+        );
+    }
     
-    wp_localize_script('menu-cleaner-script', 'menu_cleaner_ajax', array(
-        'ajax_url' => admin_url('admin-ajax.php'),
-        'nonce' => wp_create_nonce('menu_cleaner_ajax_nonce')
-    ));
+    wp_localize_script(
+        'tools_page_menu-cleaner' === $hook ? 'menu-cleaner-script' : 'menu-cleaner-restore-script', 
+        'menu_cleaner_ajax', 
+        array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('menu_cleaner_ajax_nonce'),
+            'restore_url' => admin_url('tools.php?page=menu-cleaner-restore')
+        )
+    );
     
     wp_enqueue_style(
         'menu-cleaner-style',
@@ -173,7 +303,7 @@ function menu_cleaner_admin_page() {
         <div id="menu-cleaner-notices"></div>
         
         <p><?php _e('Select a menu and specify how many items to delete. Items will be deleted starting from the last/highest menu order.', 'menu-cleaner'); ?></p>
-        <p><strong><?php _e('Warning:', 'menu-cleaner'); ?></strong> <?php _e('This action cannot be undone. Make sure to backup your menu before proceeding.', 'menu-cleaner'); ?></p>
+        <p><strong><?php _e('Note:', 'menu-cleaner'); ?></strong> <?php _e('Deleted items can now be restored from the', 'menu-cleaner'); ?> <a href="<?php echo esc_url(admin_url('tools.php?page=menu-cleaner-restore')); ?>"><?php _e('Restore Menu Items', 'menu-cleaner'); ?></a> <?php _e('page.', 'menu-cleaner'); ?></p>
 
         <form id="menu-cleaner-form" method="post">
             <?php wp_nonce_field('menu_cleaner_action', 'menu_cleaner_nonce'); ?>
@@ -254,6 +384,7 @@ function menu_cleaner_admin_page() {
             
             <p class="submit">
                 <input type="button" id="clean-menu-items" class="button button-primary" value="<?php esc_attr_e('Delete Menu Items', 'menu-cleaner'); ?>" />
+                <input type="button" id="stop-deletion" class="button button-secondary" value="<?php esc_attr_e('Stop Deletion', 'menu-cleaner'); ?>" style="display: none;" />
                 <span class="spinner"></span>
             </p>
         </form>
@@ -281,6 +412,7 @@ function menu_cleaner_ajax_delete_items() {
     $offset = isset($_POST['offset']) ? absint($_POST['offset']) : 0;
     $skip_parents = isset($_POST['skip_parents']) && $_POST['skip_parents'] === 'true';
     $deletion_mode = isset($_POST['deletion_mode']) ? sanitize_text_field($_POST['deletion_mode']) : 'count';
+    $deletion_session = isset($_POST['deletion_session']) ? sanitize_text_field($_POST['deletion_session']) : '';
     
     // Validate menu ID
     if (!$menu_id || $menu_id <= 0) {
@@ -483,9 +615,17 @@ function menu_cleaner_ajax_delete_items() {
         }
     }
     
+    // Generate deletion session if not provided
+    if (empty($deletion_session)) {
+        $deletion_session = wp_generate_password(32, false);
+    }
+    
     foreach ($menu_items as $item) {
         // Get the title BEFORE deleting
         $item_title = menu_cleaner_get_item_title($item->ID);
+        
+        // Save to history before deletion
+        menu_cleaner_save_deleted_item($item->ID, $menu_id, $menu->name, $deletion_session);
         
         $result = wp_delete_post($item->ID, true);
         if ($result !== false) {
@@ -505,7 +645,8 @@ function menu_cleaner_ajax_delete_items() {
         'count' => count($deleted_items),
         'skipped' => $skipped_items,
         'skipped_count' => count($skipped_items),
-        'has_more' => count($menu_items) === $batch_size
+        'has_more' => count($menu_items) === $batch_size,
+        'deletion_session' => $deletion_session
     ));
 }
 
@@ -538,4 +679,256 @@ function menu_cleaner_ajax_get_count() {
     }
     
     wp_send_json_success(array('count' => $count));
+}
+
+// Restore page callback
+function menu_cleaner_restore_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.', 'menu-cleaner'));
+    }
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'menu_cleaner_history';
+    
+    // Get deletion sessions
+    $sessions = $wpdb->get_results("
+        SELECT DISTINCT deletion_session, menu_id, menu_name, 
+               COUNT(*) as item_count, 
+               MIN(deleted_at) as deleted_at
+        FROM $table_name
+        WHERE restored = 0
+        GROUP BY deletion_session, menu_id, menu_name
+        ORDER BY deleted_at DESC
+        LIMIT 50
+    ");
+    
+    ?>
+    <div class="wrap">
+        <h1><?php echo esc_html__('Restore Menu Items', 'menu-cleaner'); ?></h1>
+        
+        <div id="menu-cleaner-notices"></div>
+        
+        <p><?php _e('Select a deletion session to view and restore deleted menu items.', 'menu-cleaner'); ?></p>
+        
+        <?php if (empty($sessions)): ?>
+            <p><?php _e('No deleted items available for restoration.', 'menu-cleaner'); ?></p>
+        <?php else: ?>
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th><?php _e('Deletion Date', 'menu-cleaner'); ?></th>
+                        <th><?php _e('Menu', 'menu-cleaner'); ?></th>
+                        <th><?php _e('Items Deleted', 'menu-cleaner'); ?></th>
+                        <th><?php _e('Actions', 'menu-cleaner'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($sessions as $session): ?>
+                        <tr>
+                            <td><?php echo esc_html(mysql2date('Y-m-d H:i:s', $session->deleted_at)); ?></td>
+                            <td><?php echo esc_html($session->menu_name); ?></td>
+                            <td><?php echo esc_html($session->item_count); ?></td>
+                            <td>
+                                <a href="#" class="button button-small view-session-items" 
+                                   data-session="<?php echo esc_attr($session->deletion_session); ?>"
+                                   data-menu-id="<?php echo esc_attr($session->menu_id); ?>">
+                                    <?php _e('View Items', 'menu-cleaner'); ?>
+                                </a>
+                                <a href="#" class="button button-primary button-small restore-all-items" 
+                                   data-session="<?php echo esc_attr($session->deletion_session); ?>"
+                                   data-menu-id="<?php echo esc_attr($session->menu_id); ?>">
+                                    <?php _e('Restore All', 'menu-cleaner'); ?>
+                                </a>
+                            </td>
+                        </tr>
+                        <tr class="session-items" id="items-<?php echo esc_attr($session->deletion_session); ?>" style="display: none;">
+                            <td colspan="4">
+                                <div class="items-container"></div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+        
+        <p style="margin-top: 20px;">
+            <a href="<?php echo esc_url(admin_url('tools.php?page=menu-cleaner')); ?>" class="button">
+                <?php _e('Back to Menu Cleaner', 'menu-cleaner'); ?>
+            </a>
+        </p>
+    </div>
+    <?php
+}
+
+// AJAX handler for getting session items
+add_action('wp_ajax_menu_cleaner_get_session_items', 'menu_cleaner_ajax_get_session_items');
+
+function menu_cleaner_ajax_get_session_items() {
+    // Verify nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'menu_cleaner_ajax_nonce')) {
+        wp_die(__('Security check failed', 'menu-cleaner'));
+    }
+    
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_die(__('Insufficient permissions', 'menu-cleaner'));
+    }
+    
+    $session = isset($_POST['session']) ? sanitize_text_field($_POST['session']) : '';
+    
+    if (empty($session)) {
+        wp_send_json_error(array('message' => __('Invalid session', 'menu-cleaner')));
+    }
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'menu_cleaner_history';
+    
+    $items = $wpdb->get_results($wpdb->prepare("
+        SELECT * FROM $table_name
+        WHERE deletion_session = %s AND restored = 0
+        ORDER BY item_title ASC
+    ", $session));
+    
+    wp_send_json_success(array('items' => $items));
+}
+
+// AJAX handler for restoring items
+add_action('wp_ajax_menu_cleaner_restore_items', 'menu_cleaner_ajax_restore_items');
+
+function menu_cleaner_ajax_restore_items() {
+    // Verify nonce
+    if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'menu_cleaner_ajax_nonce')) {
+        wp_die(__('Security check failed', 'menu-cleaner'));
+    }
+    
+    // Check permissions
+    if (!current_user_can('manage_options')) {
+        wp_die(__('Insufficient permissions', 'menu-cleaner'));
+    }
+    
+    $session = isset($_POST['session']) ? sanitize_text_field($_POST['session']) : '';
+    $menu_id = isset($_POST['menu_id']) ? absint($_POST['menu_id']) : 0;
+    $items = isset($_POST['items']) ? $_POST['items'] : array();
+    
+    if (empty($session)) {
+        wp_send_json_error(array('message' => __('Invalid session', 'menu-cleaner')));
+    }
+    
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'menu_cleaner_history';
+    
+    // Get items to restore
+    if ($items === 'all') {
+        $items_to_restore = $wpdb->get_results($wpdb->prepare("
+            SELECT * FROM $table_name
+            WHERE deletion_session = %s AND restored = 0
+        ", $session));
+    } else {
+        // Sanitize item IDs
+        $item_ids = array_map('absint', (array)$items);
+        if (empty($item_ids)) {
+            wp_send_json_error(array('message' => __('No items selected', 'menu-cleaner')));
+        }
+        
+        $placeholders = implode(',', array_fill(0, count($item_ids), '%d'));
+        $query = $wpdb->prepare("
+            SELECT * FROM $table_name
+            WHERE id IN ($placeholders) AND deletion_session = %s AND restored = 0
+        ", array_merge($item_ids, array($session)));
+        
+        $items_to_restore = $wpdb->get_results($query);
+    }
+    
+    $restored_count = 0;
+    $id_mapping = array(); // Map old IDs to new IDs for parent-child relationships
+    
+    // First pass: restore all items and create ID mapping
+    foreach ($items_to_restore as $item) {
+        $item_data = json_decode($item->item_data, true);
+        if (!$item_data) continue;
+        
+        // Create new menu item post
+        $post_data = array(
+            'post_title' => $item_data['post_data']['post_title'],
+            'post_content' => $item_data['post_data']['post_content'],
+            'post_status' => $item_data['post_data']['post_status'],
+            'post_type' => 'nav_menu_item',
+            'menu_order' => $item_data['post_data']['menu_order'],
+        );
+        
+        $new_item_id = wp_insert_post($post_data);
+        
+        if ($new_item_id && !is_wp_error($new_item_id)) {
+            $id_mapping[$item->item_id] = $new_item_id;
+            
+            // Restore post meta
+            if (isset($item_data['meta_data'])) {
+                foreach ($item_data['meta_data'] as $meta_key => $meta_values) {
+                    // Skip parent for now, we'll update it in second pass
+                    if ($meta_key === '_menu_item_menu_item_parent') continue;
+                    
+                    foreach ((array)$meta_values as $meta_value) {
+                        add_post_meta($new_item_id, $meta_key, maybe_unserialize($meta_value));
+                    }
+                }
+            }
+            
+            // Assign to menu
+            if ($menu_id) {
+                wp_set_object_terms($new_item_id, array($menu_id), 'nav_menu');
+            } else {
+                // Try to use the original menu ID from the history
+                wp_set_object_terms($new_item_id, array($item->menu_id), 'nav_menu');
+            }
+            
+            $restored_count++;
+        }
+    }
+    
+    // Second pass: update parent relationships
+    foreach ($items_to_restore as $item) {
+        if (!isset($id_mapping[$item->item_id])) continue;
+        
+        $new_item_id = $id_mapping[$item->item_id];
+        $item_data = json_decode($item->item_data, true);
+        
+        if (isset($item_data['meta_data']['_menu_item_menu_item_parent'])) {
+            $parent_values = (array)$item_data['meta_data']['_menu_item_menu_item_parent'];
+            $old_parent_id = reset($parent_values);
+            
+            if ($old_parent_id && $old_parent_id != '0') {
+                // Check if we have the new parent ID in our mapping
+                $new_parent_id = isset($id_mapping[$old_parent_id]) ? $id_mapping[$old_parent_id] : 0;
+                update_post_meta($new_item_id, '_menu_item_menu_item_parent', $new_parent_id);
+            } else {
+                update_post_meta($new_item_id, '_menu_item_menu_item_parent', 0);
+            }
+        }
+    }
+    
+    // Mark items as restored
+    if ($items === 'all') {
+        $wpdb->update(
+            $table_name,
+            array('restored' => 1),
+            array('deletion_session' => $session),
+            array('%d'),
+            array('%s')
+        );
+    } else {
+        $placeholders = implode(',', array_fill(0, count($item_ids), '%d'));
+        $wpdb->query($wpdb->prepare("
+            UPDATE $table_name 
+            SET restored = 1 
+            WHERE id IN ($placeholders)
+        ", $item_ids));
+    }
+    
+    // Clear menu cache
+    wp_cache_delete('last_changed', 'terms');
+    
+    wp_send_json_success(array(
+        'restored_count' => $restored_count,
+        'message' => sprintf(_n('%d item restored', '%d items restored', $restored_count, 'menu-cleaner'), $restored_count)
+    ));
 }
